@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Timer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              primary: '#6366f1',
+              secondary: '#a855f7',
+              dark: '#0f172a',
+              surface: '#1e293b',
+            },
+            animation: {
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #0f172a;
+        color: #f8fafc;
+      }
+      /* Hide scrollbar for cleaner UI */
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #0f172a; }
+      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+    "canvas-confetti": "https://aistudiocdn.com/canvas-confetti@^1.9.4"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+
+        // --- Utils & Constants ---
+        const TimerStatus = {
+            IDLE: 'IDLE',
+            RUNNING: 'RUNNING',
+            PAUSED: 'PAUSED',
+            COMPLETED: 'COMPLETED'
+        };
+
+        const formatTime = (totalSeconds) => {
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            const s = totalSeconds % 60;
+            if (h > 0) {
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        };
+
+        const calculateTotalSeconds = (values) => {
+            return (values.hours * 3600) + (values.minutes * 60) + values.seconds;
+        };
+
+        const getProgress = (current, total) => {
+            if (total === 0) return 0;
+            return ((total - current) / total) * 100;
+        };
+
+        // --- Icons (Inline SVGs) ---
+        const PlayIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        );
+        const PauseIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        );
+        const RotateCcwIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        );
+        const Edit2Icon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+        );
+        const TimerIcon = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>
+        );
+
+        // --- Components ---
+        const CircularProgress = ({ progress, size = 320, strokeWidth = 12, children }) => {
+            const radius = (size - strokeWidth) / 2;
+            const circumference = radius * 2 * Math.PI;
+            const offset = circumference - (progress / 100) * circumference;
+
+            return (
+                <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+                    <svg className="absolute top-0 left-0 w-full h-full transform -rotate-90">
+                        <circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={radius}
+                            stroke="currentColor"
+                            strokeWidth={strokeWidth}
+                            fill="transparent"
+                            className="text-surface"
+                        />
+                        <circle
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={radius}
+                            stroke="currentColor"
+                            strokeWidth={strokeWidth}
+                            fill="transparent"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={offset}
+                            strokeLinecap="round"
+                            className="text-primary transition-all duration-1000 ease-linear"
+                        />
+                    </svg>
+                    <div className="relative z-10 flex flex-col items-center justify-center">
+                        {children}
+                    </div>
+                    <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full -z-10 scale-75 opacity-50 animate-pulse-slow"></div>
+                </div>
+            );
+        };
+
+        const TimeInput = ({ values, onChange, onStart }) => {
+            const handleChange = (field, e) => {
+                let val = parseInt(e.target.value) || 0;
+                val = Math.max(0, val);
+                if (field === 'seconds' || field === 'minutes') val = Math.min(59, val);
+                if (field === 'hours') val = Math.min(99, val);
+                onChange({ ...values, [field]: val });
+            };
+
+            return (
+                <div className="flex flex-col items-center gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="flex items-end gap-2 sm:gap-4">
+                        {['hours', 'minutes', 'seconds'].map((unit, index) => (
+                            <React.Fragment key={unit}>
+                                <div className="flex flex-col items-center gap-2">
+                                    <label className="text-xs uppercase tracking-wider text-slate-400 font-semibold">{unit}</label>
+                                    <input
+                                        type="number"
+                                        value={values[unit].toString()}
+                                        onChange={(e) => handleChange(unit, e)}
+                                        className="w-20 h-24 sm:w-24 sm:h-32 text-4xl sm:text-6xl bg-surface border-2 border-slate-700 rounded-xl text-center focus:border-primary focus:ring-4 focus:ring-primary/20 outline-none transition-all font-mono shadow-xl text-white"
+                                        placeholder="00"
+                                    />
+                                </div>
+                                {index < 2 && <span className="text-4xl sm:text-6xl font-mono text-slate-600 pb-4 sm:pb-6">:</span>}
+                            </React.Fragment>
+                        ))}
+                    </div>
+                    <button
+                        onClick={onStart}
+                        className="mt-8 px-12 py-4 bg-gradient-to-r from-primary to-secondary text-white text-xl font-bold rounded-full shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-105 active:scale-95 transition-all duration-200"
+                    >
+                        Start Timer
+                    </button>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [status, setStatus] = useState(TimerStatus.IDLE);
+            const [inputValues, setInputValues] = useState({ hours: 0, minutes: 5, seconds: 0 });
+            const [totalTime, setTotalTime] = useState(300);
+            const [timeLeft, setTimeLeft] = useState(300);
+            const intervalRef = useRef(null);
+
+            const playAlarm = useCallback(() => {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+                    const ctx = new AudioContext();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(440, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.5);
+                } catch (e) {
+                    console.error("Audio playback failed", e);
+                }
+            }, []);
+
+            const handleStart = useCallback(() => {
+                if (status === TimerStatus.IDLE || status === TimerStatus.COMPLETED) {
+                    const total = calculateTotalSeconds(inputValues);
+                    if (total === 0) return;
+                    setTotalTime(total);
+                    setTimeLeft(total);
+                }
+                setStatus(TimerStatus.RUNNING);
+            }, [inputValues, status]);
+
+            const handlePause = useCallback(() => setStatus(TimerStatus.PAUSED), []);
+            const handleResume = useCallback(() => setStatus(TimerStatus.RUNNING), []);
+            
+            const handleReset = useCallback(() => {
+                setStatus(TimerStatus.IDLE);
+                setTimeLeft(calculateTotalSeconds(inputValues));
+                if (intervalRef.current) {
+                    window.clearInterval(intervalRef.current);
+                    intervalRef.current = null;
+                }
+            }, [inputValues]);
+
+            const handleEdit = useCallback(() => {
+                setStatus(TimerStatus.IDLE);
+                if (intervalRef.current) {
+                    window.clearInterval(intervalRef.current);
+                    intervalRef.current = null;
+                }
+            }, []);
+
+            const triggerConfetti = useCallback(() => {
+                const count = 200;
+                const defaults = { origin: { y: 0.7 } };
+                function fire(particleRatio, opts) {
+                    confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
+                }
+                fire(0.25, { spread: 26, startVelocity: 55 });
+                fire(0.2, { spread: 60 });
+                fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+                fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+                fire(0.1, { spread: 120, startVelocity: 45 });
+            }, []);
+
+            useEffect(() => {
+                if (status === TimerStatus.RUNNING) {
+                    intervalRef.current = window.setInterval(() => {
+                        setTimeLeft((prev) => {
+                            if (prev <= 1) {
+                                window.clearInterval(intervalRef.current);
+                                setStatus(TimerStatus.COMPLETED);
+                                playAlarm();
+                                triggerConfetti();
+                                return 0;
+                            }
+                            return prev - 1;
+                        });
+                    }, 1000);
+                } else {
+                    if (intervalRef.current) window.clearInterval(intervalRef.current);
+                }
+                return () => { if (intervalRef.current) window.clearInterval(intervalRef.current); };
+            }, [status, playAlarm, triggerConfetti]);
+
+            useEffect(() => {
+                document.title = status === TimerStatus.RUNNING ? `${formatTime(timeLeft)} - Timer` : 'Focus Timer';
+            }, [timeLeft, status]);
+
+            const progress = getProgress(timeLeft, totalTime);
+
+            return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-dark to-slate-900 text-white selection:bg-primary selection:text-white">
+                    <header className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-50">
+                        <div className="flex items-center gap-2 text-primary font-bold tracking-widest text-lg">
+                            <TimerIcon className="w-6 h-6" />
+                            <span>FOCUS.IO</span>
+                        </div>
+                    </header>
+
+                    <main className="w-full max-w-4xl flex flex-col items-center justify-center gap-12">
+                        {status === TimerStatus.COMPLETED && (
+                            <div className="animate-bounce text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-400">
+                                Time's Up!
+                            </div>
+                        )}
+
+                        {status === TimerStatus.IDLE ? (
+                            <TimeInput values={inputValues} onChange={setInputValues} onStart={handleStart} />
+                        ) : (
+                            <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                                <CircularProgress progress={status === TimerStatus.COMPLETED ? 100 : progress}>
+                                    <div className="text-center flex flex-col items-center justify-center">
+                                        <span className="text-6xl sm:text-8xl font-mono font-bold tracking-tighter tabular-nums text-white drop-shadow-2xl">
+                                            {formatTime(timeLeft)}
+                                        </span>
+                                        <span className="text-slate-400 mt-2 uppercase text-sm tracking-[0.2em] font-medium">
+                                           {status === TimerStatus.PAUSED ? 'Paused' : status === TimerStatus.COMPLETED ? 'Completed' : 'Remaining'}
+                                        </span>
+                                    </div>
+                                </CircularProgress>
+
+                                <div className="flex gap-6 mt-12">
+                                    {status === TimerStatus.RUNNING ? (
+                                        <button onClick={handlePause} className="group relative flex items-center justify-center w-16 h-16 rounded-full bg-surface border border-slate-700 text-slate-300 hover:text-white hover:border-primary hover:bg-slate-800 transition-all duration-300">
+                                            <PauseIcon className="w-6 h-6 fill-current" />
+                                            <span className="absolute -bottom-8 opacity-0 group-hover:opacity-100 text-xs text-slate-400 transition-opacity">Pause</span>
+                                        </button>
+                                    ) : status === TimerStatus.PAUSED ? (
+                                        <button onClick={handleResume} className="group relative flex items-center justify-center w-16 h-16 rounded-full bg-primary text-white hover:bg-primary/90 hover:scale-110 shadow-lg shadow-primary/30 transition-all duration-300">
+                                            <PlayIcon className="w-6 h-6 fill-current ml-1" />
+                                            <span className="absolute -bottom-8 opacity-0 group-hover:opacity-100 text-xs text-slate-400 transition-opacity">Resume</span>
+                                        </button>
+                                    ) : (
+                                        <button onClick={handleStart} className="group relative flex items-center justify-center w-16 h-16 rounded-full bg-primary text-white hover:bg-primary/90 hover:scale-110 shadow-lg shadow-primary/30 transition-all duration-300">
+                                            <RotateCcwIcon className="w-6 h-6" />
+                                            <span className="absolute -bottom-8 opacity-0 group-hover:opacity-100 text-xs text-slate-400 transition-opacity">Restart</span>
+                                        </button>
+                                    )}
+                                    <button onClick={handleReset} className="group relative flex items-center justify-center w-16 h-16 rounded-full bg-surface border border-slate-700 text-slate-300 hover:text-white hover:border-red-500 hover:bg-slate-800 transition-all duration-300">
+                                        <RotateCcwIcon className="w-6 h-6" />
+                                        <span className="absolute -bottom-8 opacity-0 group-hover:opacity-100 text-xs text-slate-400 transition-opacity">Reset</span>
+                                    </button>
+                                    <button onClick={handleEdit} className="group relative flex items-center justify-center w-16 h-16 rounded-full bg-surface border border-slate-700 text-slate-300 hover:text-white hover:border-secondary hover:bg-slate-800 transition-all duration-300">
+                                        <Edit2Icon className="w-6 h-6" />
+                                        <span className="absolute -bottom-8 opacity-0 group-hover:opacity-100 text-xs text-slate-400 transition-opacity">Edit</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                    <footer className="absolute bottom-4 text-slate-600 text-xs font-mono">Simple. Clean. Focused.</footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
