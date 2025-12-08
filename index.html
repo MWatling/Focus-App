@@ -45,9 +45,9 @@
 <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
     "canvas-confetti": "https://aistudiocdn.com/canvas-confetti@^1.9.4"
   }
@@ -187,8 +187,16 @@
             const [inputValues, setInputValues] = useState({ hours: 0, minutes: 5, seconds: 0 });
             const [totalTime, setTotalTime] = useState(300);
             const [timeLeft, setTimeLeft] = useState(300);
+            const [currentTime, setCurrentTime] = useState(new Date());
             const intervalRef = useRef(null);
 
+            // --- Current Time Effect ---
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            // --- Alarm ---
             const playAlarm = useCallback(() => {
                 try {
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -210,6 +218,7 @@
                 }
             }, []);
 
+            // --- Timer Logic ---
             const handleStart = useCallback(() => {
                 if (status === TimerStatus.IDLE || status === TimerStatus.COMPLETED) {
                     const total = calculateTotalSeconds(inputValues);
@@ -244,7 +253,10 @@
                 const count = 200;
                 const defaults = { origin: { y: 0.7 } };
                 function fire(particleRatio, opts) {
-                    confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
+                    // Check if confetti is loaded
+                    if (typeof confetti === 'function') {
+                        confetti({ ...defaults, ...opts, particleCount: Math.floor(count * particleRatio) });
+                    }
                 }
                 fire(0.25, { spread: 26, startVelocity: 55 });
                 fire(0.2, { spread: 60 });
@@ -280,15 +292,24 @@
             const progress = getProgress(timeLeft, totalTime);
 
             return (
-                <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-dark to-slate-900 text-white selection:bg-primary selection:text-white">
+                <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-dark to-slate-900 text-white selection:bg-primary selection:text-white relative overflow-hidden">
+                    {/* Header */}
                     <header className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-50">
                         <div className="flex items-center gap-2 text-primary font-bold tracking-widest text-lg">
                             <TimerIcon className="w-6 h-6" />
                             <span>FOCUS.IO</span>
                         </div>
+                        
+                        {/* Current Time Display */}
+                        <div className="flex items-center gap-3 bg-surface/80 backdrop-blur-md border border-slate-700/50 px-4 py-2 rounded-full shadow-lg transition-all hover:border-primary/50">
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+                            <span className="font-mono text-slate-200 font-bold tracking-wide text-sm sm:text-base">
+                                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                        </div>
                     </header>
 
-                    <main className="w-full max-w-4xl flex flex-col items-center justify-center gap-12">
+                    <main className="w-full max-w-4xl flex flex-col items-center justify-center gap-12 z-10">
                         {status === TimerStatus.COMPLETED && (
                             <div className="animate-bounce text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-400">
                                 Time's Up!
